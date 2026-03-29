@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>IPL Squad Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --bg:#180822;--s1:#261237;--s2:#341a4f;--s3:#452067;
+  --border:rgba(255,255,255,0.09);--border2:rgba(255,255,255,0.16);
+  --gold:#ffd84a;--gold2:#ff9a3d;--red:#ff4d6d;--purple:#36e7ff;
+  --pink:#ff4fd8;--lime:#bef264;
+  --green:#34d399;--text:#fff4ff;--muted:#c2a7d8;--muted2:#dec9ee;--r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:
+    radial-gradient(1100px 700px at -8% -12%, rgba(255,79,216,0.28), transparent 60%),
+    radial-gradient(900px 580px at 108% 8%, rgba(54,231,255,0.25), transparent 62%),
+    radial-gradient(700px 460px at 50% 115%, rgba(255,216,74,0.18), transparent 64%),
+    linear-gradient(168deg, #12061b 0%, #1d0a2c 45%, #260f3a 100%);
+  color:var(--text);
+  font-family:'DM Sans',sans-serif;
+  min-height:100vh;
+  overflow-x:hidden;
+  position:relative;
+}
+body::before,body::after{content:'';position:fixed;pointer-events:none;z-index:0;filter:blur(70px);opacity:.42}
+body::before{width:340px;height:340px;border-radius:50%;background:radial-gradient(circle,var(--purple),transparent 70%);top:8%;left:-80px;animation:auraDrift 14s ease-in-out infinite}
+body::after{width:360px;height:360px;border-radius:50%;background:radial-gradient(circle,var(--pink),transparent 72%);right:-110px;bottom:4%;animation:auraDrift 16s ease-in-out infinite reverse}
+#bgCanvas{position:fixed;inset:0;z-index:0;pointer-events:none}
+@keyframes auraDrift{0%,100%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(24px,-18px,0) scale(1.08)}}
+
+/* LOADER */
+#authLoader{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:24px;z-index:9999}
+.loader-logo{font-family:'Bebas Neue',sans-serif;font-size:48px;letter-spacing:6px;background:linear-gradient(135deg,#fff,var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:0.7}50%{opacity:1}}
+.loader-dots{display:flex;gap:10px}
+.loader-dot{width:10px;height:10px;border-radius:50%;animation:bounce 1.4s ease-in-out infinite}
+.loader-dot:nth-child(1){background:var(--gold);animation-delay:0s}
+.loader-dot:nth-child(2){background:var(--gold2);animation-delay:.2s}
+.loader-dot:nth-child(3){background:var(--red);animation-delay:.4s}
+@keyframes bounce{0%,80%,100%{transform:scale(0.6);opacity:0.4}40%{transform:scale(1.3);opacity:1}}
+
+/* HEADER */
+header{position:sticky;top:0;z-index:100;display:none;align-items:center;justify-content:space-between;padding:12px 24px;background:rgba(34,16,50,0.78);backdrop-filter:blur(24px);border-bottom:1px solid var(--border);overflow:hidden}
+header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--purple) 30%,var(--pink) 58%,var(--gold) 78%,transparent);opacity:0.7}
+.logo{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:3px;display:flex;align-items:center;gap:10px}
+.logo-text{background:linear-gradient(135deg,#fff 5%,var(--purple) 35%,var(--pink) 68%,var(--gold) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.logo-live{background:var(--red);color:#fff;font-size:9px;font-family:'DM Sans',sans-serif;font-weight:700;padding:2px 7px;border-radius:4px;letter-spacing:1px;animation:liveBlink 2s ease-in-out infinite}
+@keyframes liveBlink{0%,100%{opacity:1}50%{opacity:0.5}}
+.user-pill{display:flex;align-items:center;gap:8px;background:var(--s2);border:1px solid var(--border2);border-radius:40px;padding:5px 14px 5px 6px;cursor:pointer;transition:all .25s}
+.user-pill:hover{border-color:rgba(255,79,216,.6);box-shadow:0 0 24px rgba(255,79,216,.2)}
+.user-pill img{width:30px;height:30px;border-radius:50%;border:2px solid var(--gold);object-fit:cover}
+.user-init{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--purple),var(--gold));display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff}
+.user-pill span{font-size:13px;font-weight:600}
+.signout-btn{background:none;border:none;color:var(--muted2);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;transition:color .2s;margin-left:2px}
+.signout-btn:hover{color:var(--red)}
+
+/* SCREENS */
+.screen{display:none}.screen.active{display:block}
+#loginScreen{min-height:100vh;display:none;align-items:center;justify-content:center;position:relative;overflow:hidden}
+#loginScreen.active{display:flex}
+
+/* LOGIN */
+.login-card{position:relative;z-index:2;background:linear-gradient(165deg,rgba(44,19,66,.95),rgba(31,15,52,.92));border:1px solid var(--border2);border-radius:28px;padding:52px 44px;max-width:420px;width:90%;text-align:center;backdrop-filter:blur(40px);box-shadow:0 0 120px rgba(255,79,216,.18),0 40px 80px rgba(0,0,0,.45);animation:slideUp .7s cubic-bezier(.34,1.56,.64,1) both}
+.login-card::before{content:'';position:absolute;inset:-1px;border-radius:29px;background:linear-gradient(135deg,rgba(255,79,216,.32),rgba(54,231,255,.24),rgba(255,216,74,.2));z-index:-1}
+.login-card::after{content:'';position:absolute;top:-160%;left:-60%;width:65%;height:320%;background:linear-gradient(110deg,transparent,rgba(255,255,255,.18),transparent);transform:rotate(8deg);animation:cardShine 5.5s ease-in-out infinite}
+@keyframes slideUp{from{opacity:0;transform:translateY(40px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes cardShine{0%,68%,100%{left:-70%}78%{left:140%}}
+.login-trophy{font-size:72px;display:block;margin-bottom:20px;animation:float 3s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0) rotate(-3deg)}50%{transform:translateY(-12px) rotate(3deg)}}
+.login-title{font-family:'Bebas Neue',sans-serif;font-size:44px;letter-spacing:3px;line-height:1.1;background:linear-gradient(135deg,#fff,var(--gold));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:10px}
+.login-sub{color:var(--muted2);font-size:14px;line-height:1.7;margin-bottom:36px}
+.google-btn{display:flex;align-items:center;justify-content:center;gap:12px;background:#fff;color:#1a1a1a;border:none;border-radius:14px;padding:16px 24px;width:100%;font-size:15px;font-weight:700;cursor:pointer;transition:all .25s;font-family:'DM Sans',sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.3)}
+.google-btn:hover{transform:translateY(-3px);box-shadow:0 12px 40px rgba(0,0,0,.4)}
+.google-btn svg{width:20px;height:20px;flex-shrink:0}
+.login-note{margin-top:18px;font-size:12px;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:6px}
+
+/* APP */
+#appScreen{padding:24px;max-width:940px;margin:0 auto;position:relative;z-index:1}
+
+/* TABS */
+.tabs{display:flex;gap:4px;margin-bottom:28px;background:rgba(41,18,62,.66);border:1px solid var(--border);border-radius:16px;padding:5px}
+.tab-btn{flex:1;background:none;border:none;color:var(--muted2);font-size:13px;font-weight:700;padding:10px 16px;cursor:pointer;border-radius:12px;transition:all .25s;font-family:'DM Sans',sans-serif;text-transform:uppercase;letter-spacing:.8px}
+.tab-btn:hover{color:var(--text);background:rgba(255,255,255,.05)}
+.tab-btn.active{color:#230f30;background:linear-gradient(135deg,var(--pink),var(--gold));box-shadow:0 4px 22px rgba(255,79,216,.35)}
+.tab-content{display:none}
+.tab-content.active{display:block;animation:tabIn .3s ease both}
+@keyframes tabIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* CARDS */
+.card{background:linear-gradient(165deg,rgba(43,20,64,.9),rgba(32,16,50,.86));border:1px solid var(--border);border-radius:var(--r);padding:24px;margin-bottom:20px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .25s ease,border-color .25s ease}
+.card::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.07),transparent)}
+.card:hover{transform:translateY(-3px);border-color:rgba(255,255,255,.24);box-shadow:0 16px 40px rgba(255,79,216,.16)}
+.card-title{font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;letter-spacing:.5px;margin-bottom:20px;display:flex;align-items:center;gap:10px}
+.admin-banner{background:linear-gradient(135deg,rgba(255,79,216,.12),rgba(54,231,255,.08));border:1px solid rgba(255,79,216,.35);border-radius:12px;padding:12px 18px;margin-bottom:20px;font-size:13px;color:#ffd5f6;display:flex;align-items:center;gap:8px}
+
+/* FORMS */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.form-group{display:flex;flex-direction:column;gap:7px}
+.form-label{font-size:11px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:1px}
+.fi{background:var(--s2);border:1px solid var(--border2);border-radius:10px;padding:11px 14px;color:var(--text);font-size:14px;font-family:'DM Sans',sans-serif;outline:none;transition:all .2s;width:100%}
+.fi:focus{border-color:rgba(54,231,255,.65);background:var(--s3);box-shadow:0 0 0 3px rgba(54,231,255,.18)}
+.fi option{background:var(--s2)}
+
+/* TABLE */
+.score-table{width:100%;border-collapse:collapse;margin-bottom:16px}
+.score-table th{text-align:left;padding:10px 14px;font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--border)}
+.score-table td{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.03);font-size:14px;transition:background .15s}
+.score-table tr:hover td{background:rgba(255,255,255,.02)}
+.score-table tr:last-child td{border-bottom:none}
+.score-input{background:var(--s3);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;color:var(--text);font-size:14px;width:110px;font-family:'DM Sans',sans-serif;outline:none;transition:all .2s}
+.score-input:focus{border-color:rgba(255,79,216,.6);box-shadow:0 0 0 3px rgba(255,79,216,.18)}
+.rank-badge{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;font-weight:700;font-size:13px}
+.rank-1{background:linear-gradient(135deg,#FFD700,#ff9900);color:#000;box-shadow:0 0 14px rgba(255,215,0,.6)}
+.rank-2{background:linear-gradient(135deg,#C0C0C0,#888);color:#000}
+.rank-3{background:linear-gradient(135deg,#CD7F32,#a05a1a);color:#fff}
+.rank-other{background:var(--s3);color:var(--muted);border:1px solid var(--border2)}
+
+/* BUTTONS */
+.btn{padding:11px 22px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:none;font-family:'DM Sans',sans-serif;transition:all .2s;letter-spacing:.3px}
+.btn-primary{background:linear-gradient(135deg,var(--pink),var(--gold));color:#260e2f;box-shadow:0 4px 16px rgba(255,79,216,.32);position:relative;overflow:hidden;isolation:isolate}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 9px 26px rgba(255,79,216,.45)}
+.btn-primary::after{content:'';position:absolute;inset:0;background:linear-gradient(120deg,transparent 30%,rgba(255,255,255,.35) 50%,transparent 72%);transform:translateX(-120%);z-index:-1;transition:transform .6s ease}
+.btn-primary:hover::after{transform:translateX(120%)}
+.btn-danger{background:linear-gradient(135deg,var(--red),#ff7a4f);color:#fff;box-shadow:0 4px 16px rgba(240,82,103,.35)}
+.btn-danger:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(240,82,103,.5)}
+.btn-sm{padding:7px 14px;font-size:12px}
+
+/* MATCHES */
+.match-item{background:linear-gradient(165deg,rgba(43,18,62,.92),rgba(30,14,46,.9));border:1px solid var(--border);border-radius:var(--r);margin-bottom:12px;overflow:hidden;transition:border-color .25s,transform .22s ease,box-shadow .22s ease;animation:fadeIn .4s ease both}
+@keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.match-item:hover{border-color:var(--border2);transform:translateY(-2px);box-shadow:0 12px 26px rgba(0,0,0,.24)}
+.match-header{padding:18px 22px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:background .2s;gap:12px}
+.match-header:hover{background:rgba(255,255,255,.02)}
+.match-title{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:16px;letter-spacing:.3px}
+.match-meta{font-size:12px;color:var(--muted);margin-top:3px}
+.match-chev{font-size:12px;color:var(--muted);transition:transform .3s;flex-shrink:0}
+.match-status{padding:5px 12px;border-radius:20px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;flex-shrink:0}
+.status-locked{background:rgba(34,197,94,.1);color:#22c55e;border:1px solid rgba(34,197,94,.25)}
+.status-open{background:rgba(255,79,216,.13);color:#ffd9f8;border:1px solid rgba(255,79,216,.36);animation:openGlow 2.5s ease-in-out infinite}
+@keyframes openGlow{0%,100%{box-shadow:none;border-color:rgba(255,79,216,.35)}50%{box-shadow:0 0 14px rgba(255,79,216,.36);border-color:rgba(255,79,216,.75)}}
+.match-body{display:none;padding:0 22px 22px;border-top:1px solid var(--border)}
+.match-body.open{display:block;animation:tabIn .25s ease both}
+.locked-tag{font-size:12px;color:var(--green);display:flex;align-items:center;gap:6px}
+
+/* LEADERBOARD */
+.lb-hero{background:linear-gradient(165deg,rgba(44,20,65,.92),rgba(31,14,48,.9));border:1px solid var(--border);border-radius:var(--r);padding:22px 26px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;position:relative;overflow:hidden}
+.lb-hero::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,79,216,.12),rgba(54,231,255,.1),rgba(255,216,74,.08));pointer-events:none}
+.lb-hero-bg{position:absolute;right:-10px;top:50%;transform:translateY(-50%);font-family:'Bebas Neue',sans-serif;font-size:110px;color:rgba(255,255,255,.025);pointer-events:none;line-height:1;letter-spacing:-2px;animation:heroDrift 6.5s ease-in-out infinite}
+@keyframes heroDrift{0%,100%{transform:translateY(-50%) translateX(0)}50%{transform:translateY(-54%) translateX(-6px)}}
+.lb-season{font-family:'Bebas Neue',sans-serif;font-size:32px;letter-spacing:2px;background:linear-gradient(135deg,var(--gold),var(--gold2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.lb-season-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
+.lb-count{font-size:13px;color:var(--muted2);font-weight:500}
+
+/* PODIUM */
+.podium-wrap{display:flex;gap:10px;margin-bottom:20px;align-items:flex-end;justify-content:center}
+.pc{flex:1;max-width:200px;border-radius:16px;padding:20px 14px 0;text-align:center;border:1px solid var(--border);position:relative;overflow:hidden;transition:transform .2s,box-shadow .25s ease;cursor:default}
+.pc:hover{transform:translateY(-4px)}
+.pc:hover{box-shadow:0 14px 28px rgba(0,0,0,.25)}
+.pc.pc1{background:linear-gradient(160deg,rgba(255,215,0,.12),rgba(255,140,0,.03));border-color:rgba(255,215,0,.3);box-shadow:0 0 30px rgba(255,215,0,.08);order:2}
+.pc.pc2{background:linear-gradient(160deg,rgba(192,192,192,.08),rgba(120,120,120,.02));border-color:rgba(192,192,192,.18);order:1}
+.pc.pc3{background:linear-gradient(160deg,rgba(205,127,50,.08),rgba(140,80,20,.02));border-color:rgba(205,127,50,.18);order:3}
+.pc-crown{font-size:28px;display:block;margin-bottom:8px}
+.pc-av{width:54px;height:54px;border-radius:50%;margin:0 auto 10px;object-fit:cover;display:block}
+.pc-av-i{width:54px;height:54px;border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff}
+.pc1 .pc-av-i{background:linear-gradient(135deg,#FFD700,#ff9900);border:2px solid rgba(255,215,0,.5)}
+.pc2 .pc-av-i{background:linear-gradient(135deg,#999,#555);border:2px solid rgba(192,192,192,.4)}
+.pc3 .pc-av-i{background:linear-gradient(135deg,#CD7F32,#8b5a2b);border:2px solid rgba(205,127,50,.4)}
+.pc-name{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-pts{font-family:'Bebas Neue',sans-serif;font-size:28px;color:var(--gold);line-height:1}
+.pc-pts-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px}
+.pc-medals{display:flex;gap:5px;justify-content:center;margin-top:6px;flex-wrap:wrap;padding-bottom:14px}
+.pc-medal{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:700}
+.pc-bar{position:absolute;bottom:0;left:0;right:0;height:3px}
+.pc1 .pc-bar{background:linear-gradient(90deg,var(--gold),var(--gold2))}
+.pc2 .pc-bar{background:linear-gradient(90deg,#999,#555)}
+.pc3 .pc-bar{background:linear-gradient(90deg,#CD7F32,#8b5a2b)}
+
+/* LB ROWS */
+.lb-rows{display:flex;flex-direction:column;gap:8px}
+.lb-row{display:flex;align-items:center;gap:14px;background:linear-gradient(165deg,rgba(41,18,60,.95),rgba(30,14,46,.92));border:1px solid var(--border);border-radius:12px;padding:14px 18px;transition:all .2s;animation:rowIn .4s ease both;position:relative;overflow:hidden}
+.lb-row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border);transition:background .2s;border-radius:3px 0 0 3px}
+.lb-row:hover{transform:translateX(5px);border-color:var(--border2)}
+.lb-row:hover::before{background:var(--pink)}
+@keyframes rowIn{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
+.lb-num{font-family:'Bebas Neue',sans-serif;font-size:28px;width:36px;text-align:center;flex-shrink:0;color:var(--muted2)}
+.lb-av-img{width:38px;height:38px;border-radius:50%;object-fit:cover;border:2px solid var(--border2);flex-shrink:0}
+.lb-av-i{width:38px;height:38px;border-radius:50%;flex-shrink:0;background:linear-gradient(135deg,var(--purple),var(--gold));display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;border:2px solid var(--border2)}
+.lb-info{flex:1;min-width:0}
+.lb-name{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px}
+.lb-email{font-size:11px;color:var(--muted);margin-top:1px}
+.lb-badges{display:flex;gap:6px;margin-top:5px;flex-wrap:wrap}
+.lb-badge{font-size:11px;padding:2px 9px;border-radius:20px;font-weight:700;white-space:nowrap}
+.lb-pts-col{text-align:right;flex-shrink:0}
+.lb-pts{font-family:'Bebas Neue',sans-serif;font-size:30px;color:var(--gold);line-height:1}
+.lb-pts-lbl{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px}
+
+/* ADMIN */
+.wl-item{display:flex;align-items:center;justify-content:space-between;background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:11px 16px;margin-bottom:8px;font-size:13px;transition:border-color .2s}
+.wl-item:hover{border-color:var(--border2)}
+.rm-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;transition:color .2s}
+.rm-btn:hover{color:var(--red)}
+.add-row{display:flex;gap:10px;margin-top:12px}
+.empty-state{text-align:center;padding:56px 24px;color:var(--muted);font-size:14px;line-height:1.8}
+.empty-state .icon{font-size:52px;display:block;margin-bottom:16px;opacity:.5;animation:float 3s ease-in-out infinite}
+
+/* TOAST */
+#toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(120px);background:var(--s3);border:1px solid var(--border2);border-radius:14px;padding:13px 26px;font-size:14px;font-weight:600;z-index:9999;transition:transform .4s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;pointer-events:none;backdrop-filter:blur(20px);box-shadow:0 8px 40px rgba(0,0,0,.5)}
+#toast.show{transform:translateX(-50%) translateY(0)}
+#toast.success{border-color:rgba(34,197,94,.4);color:var(--green)}
+#toast.error{border-color:rgba(232,68,90,.4);color:var(--red)}
+
+/* MODAL */
+.modal-ov{position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(10px);z-index:500;display:none;align-items:center;justify-content:center}
+.modal-ov.open{display:flex}
+.modal{background:var(--s1);border:1px solid var(--border2);border-radius:24px;padding:36px 32px;width:90%;max-width:420px;position:relative;box-shadow:0 0 80px rgba(0,0,0,.7);animation:slideUp .3s ease both}
+.modal::before{content:'';position:absolute;inset:-1px;border-radius:25px;background:linear-gradient(135deg,rgba(255,79,216,.28),rgba(54,231,255,.2) 56%,rgba(255,216,74,.16) 84%);z-index:-1}
+.modal-x{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:50%;background:var(--s2);border:1px solid var(--border);color:var(--muted2);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.modal-x:hover{background:var(--s3);color:var(--text)}
+.modal-title{font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;margin-bottom:24px}
+.pav-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:26px}
+.pav-wrap img{width:80px;height:80px;border-radius:50%;border:3px solid var(--gold);object-fit:cover;box-shadow:0 0 24px rgba(255,79,216,.38)}
+.pav-ph{width:80px;height:80px;border-radius:50%;border:3px solid var(--gold);background:linear-gradient(135deg,var(--purple),var(--pink));display:flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 0 24px rgba(255,79,216,.34)}
+
+@media(max-width:600px){
+  .form-row{grid-template-columns:1fr}
+  #appScreen{padding:14px}
+  .podium-wrap{gap:8px}
+  .pc{padding:14px 10px 0}
+  .tabs{border-radius:12px}
+  .tab-btn{padding:8px 10px;font-size:11px}
+  header{padding:10px 16px}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important}
+}
+</style>
+</head>
+<body>
+
+<canvas id="bgCanvas"></canvas>
+
+<div id="authLoader">
+  <div class="loader-logo">IPL TRACKER</div>
+  <div class="loader-dots">
+    <div class="loader-dot"></div>
+    <div class="loader-dot"></div>
+    <div class="loader-dot"></div>
+  </div>
+</div>
+
+<header id="mainHeader">
+  <div class="logo">
+    <span class="logo-text">IPL Points Tracker</span>
+    <span class="logo-live">LIVE</span>
+  </div>
+  <div class="user-pill" onclick="openProfileModal()" title="Account preferences">
+    <img id="userAvatar" src="" alt="" style="display:none"/>
+    <div class="user-init" id="userInit" style="display:none"></div>
+    <span id="userName">User</span>
+    <button class="signout-btn" onclick="event.stopPropagation();doSignOut()">Sign out</button>
+  </div>
+</header>
+
+<div id="loginScreen" class="screen">
+  <div class="login-card">
+    <span class="login-trophy">🏆</span>
+    <div class="login-title">IPL Squad<br/>Tracker</div>
+    <div class="login-sub">Track points, rank your crew, settle the score.<br/>Only your squad gets in.</div>
+    <button class="google-btn" onclick="doSignIn()">
+      <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Continue with Google
+    </button>
+    <div class="login-note">🔒 Access restricted to whitelisted members only</div>
+  </div>
+</div>
+
+<div id="appScreen" class="screen">
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('matches')">🏏 Matches</button>
+    <button class="tab-btn" onclick="switchTab('leaderboard')">🏆 Leaderboard</button>
+    <button class="tab-btn" id="adminTabBtn" style="display:none" onclick="switchTab('admin')">⚙ Admin</button>
+  </div>
+
+  <div class="tab-content active" id="tab-matches">
+    <div class="admin-banner">👑 Any member can create a match and be its host.</div>
+    <div class="card">
+      <div class="card-title">🏏 Create Match Contest</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Match</label>
+          <input type="text" class="fi" id="matchTitle" placeholder="CSK vs MI – Match 12"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Match Date</label>
+          <input type="date" class="fi" id="matchDate"/>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:18px">
+        <label class="form-label">Host (will enter & lock scores)</label>
+        <select class="fi" id="matchHostSelect"></select>
+      </div>
+      <div class="form-label" style="margin-bottom:10px">Participants</div>
+      <table class="score-table">
+        <thead><tr><th>Player</th><th>Include?</th></tr></thead>
+        <tbody id="participantCheckboxes"></tbody>
+      </table>
+      <button class="btn btn-primary" onclick="createMatch()">Create Contest</button>
+    </div>
+    <div id="matchList"></div>
+  </div>
+
+  <div class="tab-content" id="tab-leaderboard">
+    <div class="lb-hero">
+      <div class="lb-hero-bg" id="seasonYearBg">2026</div>
+      <div>
+        <div class="lb-season-lbl">Season</div>
+        <div class="lb-season" id="seasonYearLabel">IPL 2026</div>
+      </div>
+      <div class="lb-count" id="lbMatchCount"></div>
+    </div>
+    <div id="lbPodium"></div>
+    <div class="lb-rows" id="leaderboardList"></div>
+  </div>
+
+  <div class="tab-content" id="tab-admin">
+    <div class="card">
+      <div class="card-title">🔐 Whitelist Management</div>
+      <p style="font-size:13px;color:var(--muted2);margin-bottom:18px">Only these Gmail addresses can sign in.</p>
+      <div id="whitelistItems"></div>
+      <div class="add-row">
+        <input type="email" class="fi" id="newEmailInput" placeholder="friend@gmail.com" style="flex:1"/>
+        <button class="btn btn-primary" onclick="addToWhitelist()">Add</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">👑 Super Admin</div>
+      <p style="font-size:13px;color:var(--muted2);margin-bottom:14px">Always has access and manages the whitelist.</p>
+      <div style="background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;font-size:14px;color:var(--gold)" id="superAdminDisplay"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-ov" id="profileModal">
+  <div class="modal">
+    <button class="modal-x" onclick="closeProfileModal()">✕</button>
+    <div class="modal-title">👤 Account Preferences</div>
+    <div class="pav-wrap">
+      <img id="modalAvatar" src="" alt="" style="display:none"/>
+      <div class="pav-ph" id="modalAvatarPlaceholder">🏏</div>
+      <span style="font-size:12px;color:var(--muted)">Profile photo</span>
+    </div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label class="form-label">Display Name</label>
+      <input type="text" class="fi" id="profileName" placeholder="Your name"/>
+    </div>
+    <div class="form-group" style="margin-bottom:24px">
+      <label class="form-label">Photo URL</label>
+      <input type="url" class="fi" id="profilePhotoUrl" placeholder="https://..." oninput="previewModalPhoto(this.value)"/>
+      <span style="font-size:11px;color:var(--muted);margin-top:4px">Leave blank to use your Google photo.</span>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-primary" style="flex:1" onclick="saveProfile()">Save Changes</button>
+      <button class="btn" style="background:var(--s2);color:var(--text);border:1px solid var(--border)" onclick="closeProfileModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// Animated particle canvas
+(function(){
+  var c=document.getElementById('bgCanvas'),ctx=c.getContext('2d'),W,H,P=[];
+  function resize(){W=c.width=window.innerWidth;H=c.height=window.innerHeight}
+  resize();window.addEventListener('resize',resize);
+  for(var i=0;i<70;i++)P.push({x:Math.random()*1920,y:Math.random()*1080,r:Math.random()*1.6+0.3,vx:(Math.random()-.5)*.35,vy:(Math.random()-.5)*.35,o:Math.random()*.45+.08,col:Math.random()>.6?'255,216,74':Math.random()>.5?'54,231,255':'255,79,216'});
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    P.forEach(function(p){
+      p.x+=p.vx;p.y+=p.vy;
+      if(p.x<0)p.x=W;if(p.x>W)p.x=0;if(p.y<0)p.y=H;if(p.y>H)p.y=0;
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle='rgba('+p.col+','+p.o+')';ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+</script>
+
+<script>
+var firebaseConfig = {
+  apiKey: "AIzaSyCh0tbYC2aBXjuzO9IXwv3nlXbGGAvjWEo",
+  authDomain: "ipl-bet-2f328.firebaseapp.com",
+  projectId: "ipl-bet-2f328",
+  storageBucket: "ipl-bet-2f328.firebasestorage.app",
+  messagingSenderId: "38177613742",
+  appId: "1:38177613742:web:7602e40c447902f8c20a3f",
+  measurementId: "G-Q94TMRMK2P"
+};
+var SUPER_ADMIN_EMAIL = "sacredkohra@gmail.com";
+var SEASON_YEAR = 2026;
+
+firebase.initializeApp(firebaseConfig);
+var auth=firebase.auth(), db=firebase.firestore();
+var authLoaderTimeout=setTimeout(function(){showLogin();},8000);
+var currentUser=null,currentMemberProfile=null,whitelist=[],members=[],matches=[],unsubMatches=null,unsubMembers=null;
+
+function applySeasonYear(){
+  var bg=document.getElementById("seasonYearBg"),lbl=document.getElementById("seasonYearLabel");
+  if(bg)bg.textContent=String(SEASON_YEAR);
+  if(lbl)lbl.textContent="IPL "+SEASON_YEAR;
+}
+applySeasonYear();
+
+function doSignIn(){var p=new firebase.auth.GoogleAuthProvider();auth.signInWithPopup(p).catch(function(e){showToast("Sign-in failed: "+e.message,"error");})}
+function doSignOut(){if(unsubMatches){unsubMatches();unsubMatches=null;}if(unsubMembers){unsubMembers();unsubMembers=null;}auth.signOut();}
+
+auth.onAuthStateChanged(function(user){
+  if(!user){showLogin();return;}
+  db.collection("config").doc("whitelist").get().then(function(snap){
+    if(snap.exists){whitelist=snap.data().emails||[];}
+    else{whitelist=[SUPER_ADMIN_EMAIL];db.collection("config").doc("whitelist").set({emails:whitelist});}
+    if(!whitelist.includes(user.email)&&user.email!==SUPER_ADMIN_EMAIL){auth.signOut();showToast("⛔ Access denied. Ask your admin to add you.","error");return;}
+    currentUser=user;
+    var memberRef=db.collection("members").doc(user.email);
+    memberRef.get().then(function(memberSnap){
+      var existing=memberSnap.exists?memberSnap.data():{};
+      var savedName=(existing&&typeof existing.name==="string"&&existing.name.trim())?existing.name.trim():(user.displayName||user.email);
+      var savedPhoto=(existing&&typeof existing.photo==="string")?existing.photo:(user.photoURL||"");
+      currentMemberProfile={name:savedName,email:user.email,photo:savedPhoto};
+      return memberRef.set({name:savedName,email:user.email,photo:savedPhoto},{merge:true});
+    }).then(function(){showApp();});
+  });
+});
+
+function showLogin(){
+  clearTimeout(authLoaderTimeout);
+  document.getElementById("authLoader").style.display="none";
+  document.getElementById("loginScreen").classList.add("active");
+  document.getElementById("appScreen").classList.remove("active");
+  document.getElementById("mainHeader").style.display="none";
+}
+
+function showApp(){
+  clearTimeout(authLoaderTimeout);
+  document.getElementById("authLoader").style.display="none";
+  document.getElementById("loginScreen").classList.remove("active");
+  document.getElementById("appScreen").classList.add("active");
+  document.getElementById("mainHeader").style.display="flex";
+  var av=document.getElementById("userAvatar"),init=document.getElementById("userInit");
+  var displayName=(currentMemberProfile&&currentMemberProfile.name)||currentUser.displayName||currentUser.email;
+  var displayPhoto=(currentMemberProfile&&currentMemberProfile.photo)||currentUser.photoURL||"";
+  if(displayPhoto){av.src=displayPhoto;av.style.display="block";init.style.display="none";}
+  else{init.textContent=displayName.charAt(0).toUpperCase();init.style.display="flex";av.style.display="none";}
+  document.getElementById("userName").textContent=displayName.split(" ")[0];
+  document.getElementById("superAdminDisplay").textContent=SUPER_ADMIN_EMAIL;
+  if(currentUser.email===SUPER_ADMIN_EMAIL)document.getElementById("adminTabBtn").style.display="inline-block";
+  startRealtime();
+}
+
+function startRealtime(){
+  unsubMembers=db.collection("members").onSnapshot(function(snap){
+    members=snap.docs.map(function(d){return d.data();}).filter(function(m){return whitelist.includes(m.email)||m.email===SUPER_ADMIN_EMAIL;});
+    var me=members.find(function(m){return currentUser&&m.email===currentUser.email;});
+    if(me){currentMemberProfile={name:me.name||currentUser.email,email:currentUser.email,photo:me.photo||""};}
+    renderCreateForm();
+    if(!unsubMatches){
+      unsubMatches=db.collection("matches").orderBy("createdAt","desc").onSnapshot(function(snap2){
+        matches=snap2.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+        renderMatchList();renderLeaderboard();
+        if(currentUser&&currentUser.email===SUPER_ADMIN_EMAIL)renderWhitelist();
+      });
+    }
+  });
+}
+
+function deleteMatch(id){
+  if(!confirm("🗑️ Delete this match permanently?"))return;
+  db.collection("matches").doc(id).delete().then(function(){showToast("🗑️ Match deleted","success");}).catch(function(e){showToast("Error: "+e.message,"error");});
+}
+
+function renderCreateForm(){
+  document.getElementById("matchDate").value=new Date().toISOString().split("T")[0];
+  document.getElementById("matchHostSelect").innerHTML=members.map(function(m){return'<option value="'+m.email+'"'+(m.email===currentUser.email?' selected':'')+'>'+m.name+' ('+m.email+')</option>';}).join("");
+  document.getElementById("participantCheckboxes").innerHTML=members.map(function(m){return'<tr><td>'+m.name+'<div style="font-size:11px;color:var(--muted)">'+m.email+'</div></td><td><input type="checkbox" checked data-email="'+m.email+'" style="width:16px;height:16px;accent-color:var(--gold)"/></td></tr>';}).join("");
+}
+
+function createMatch(){
+  var title=document.getElementById("matchTitle").value.trim(),date=document.getElementById("matchDate").value,hostEmail=document.getElementById("matchHostSelect").value;
+  if(!title||!date){showToast("Fill in match title and date","error");return;}
+  var checked=Array.from(document.querySelectorAll("#participantCheckboxes input:checked"));
+  if(checked.length<2){showToast("Select at least 2 participants","error");return;}
+  var participants=checked.map(function(cb){var m=members.find(function(x){return x.email===cb.dataset.email;});return{email:m.email,name:m.name,points:null};});
+  db.collection("matches").add({title:title,date:date,hostEmail:hostEmail,participants:participants,locked:false,createdAt:firebase.firestore.FieldValue.serverTimestamp(),createdBy:currentUser.email}).then(function(){showToast("✅ Match contest created!","success");document.getElementById("matchTitle").value="";});
+}
+
+function renderMatchList(){
+  var el=document.getElementById("matchList");
+  if(!matches.length){el.innerHTML='<div class="empty-state"><div class="icon">🏏</div><div>No matches yet. Create the first contest!</div></div>';return;}
+  el.innerHTML=matches.map(renderMatchItem).join("");
+}
+
+function renderMatchItem(m){
+  var isHost=m.hostEmail===currentUser.email,locked=m.locked;
+  var statusHtml=locked?'<span class="match-status status-locked">🔒 Locked</span>':'<span class="match-status status-open">📝 Open</span>';
+  var rows=(m.participants||[]).map(function(p,i){
+    var rank=locked?getRank(m.participants,p):null;
+    var bc=rank===1?"rank-1":rank===2?"rank-2":rank===3?"rank-3":"rank-other";
+    var rankCell=rank!==null?'<span class="rank-badge '+bc+'">'+rank+'</span>':'<span style="color:var(--muted);font-size:13px">#'+(i+1)+'</span>';
+    var pts=(!locked&&isHost)?'<input class="score-input" type="number" min="0" step="0.5" value="'+(p.points!==null?p.points:'')+'" placeholder="0" id="sc_'+m.id+'_'+i+'"/>'
+      :'<span style="font-family:\'Bebas Neue\',sans-serif;font-size:22px;color:var(--gold)">'+(p.points!==null?p.points:'—')+'</span>';
+    return'<tr><td>'+rankCell+'</td><td>'+p.name+'<div style="font-size:11px;color:var(--muted)">'+p.email+'</div></td><td>'+pts+'</td></tr>';
+  }).join("");
+  var actions=locked?'<span class="locked-tag">✅ Scores finalized & locked forever</span>'
+    :isHost?'<button class="btn btn-primary btn-sm" onclick="saveScores(\''+m.id+'\',false)">💾 Save</button><button class="btn btn-danger btn-sm" style="margin-left:8px" onclick="saveScores(\''+m.id+'\',true)">🔒 Lock & Finalize</button>'
+    :'<span style="font-size:12px;color:var(--muted)">Only the host can enter scores.</span>';
+  var hostName=(m.participants||[]).find(function(p){return p.email===m.hostEmail;});
+  hostName=hostName?hostName.name:m.hostEmail;
+  var delBtn=(currentUser&&currentUser.email===SUPER_ADMIN_EMAIL)?'<button class="btn btn-danger btn-sm" style="margin-left:auto" onclick="deleteMatch(\''+m.id+'\')">🗑️ Delete</button>':'';
+  return'<div class="match-item">'
+    +'<div class="match-header" onclick="toggleMatch(\''+m.id+'\')">'
+    +'<div style="flex:1;min-width:0"><div class="match-title">'+m.title+'</div>'
+    +'<div class="match-meta">📅 '+m.date+' · 👑 '+hostName+'</div></div>'
+    +'<div style="display:flex;align-items:center;gap:10px;flex-shrink:0">'+statusHtml+'<span class="match-chev" id="chev_'+m.id+'">▾</span></div></div>'
+    +'<div class="match-body" id="body_'+m.id+'">'
+    +'<table class="score-table" style="margin-top:16px"><thead><tr><th>Rank</th><th>Player</th><th>Match Points</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">'+actions+delBtn+'</div>'
+    +'</div></div>';
+}
+
+function toggleMatch(id){
+  var body=document.getElementById("body_"+id),chev=document.getElementById("chev_"+id);
+  body.classList.toggle("open");
+  if(chev)chev.style.transform=body.classList.contains("open")?"rotate(180deg)":"";
+}
+
+function saveScores(matchId,lock){
+  var match=matches.find(function(m){return m.id===matchId;});
+  if(!match||match.locked)return;
+  if(match.hostEmail!==currentUser.email){showToast("Only the host can save scores","error");return;}
+  var updated=match.participants.map(function(p,i){var inp=document.getElementById("sc_"+matchId+"_"+i);var val=inp?parseFloat(inp.value):p.points;return Object.assign({},p,{points:(isNaN(val)||!inp||inp.value==="")?null:val});});
+  if(lock){if(updated.some(function(p){return p.points===null;})){showToast("Enter points for all players before locking","error");return;}if(!confirm("🔒 Lock scores permanently? This CANNOT be undone."))return;}
+  db.collection("matches").doc(matchId).update({participants:updated,locked:!!lock}).then(function(){showToast(lock?"🔒 Scores locked forever!":"✅ Scores saved!","success");});
+}
+
+function getRank(participants,player){
+  if(player.points===null)return null;
+  var sorted=participants.filter(function(p){return p.points!==null;}).slice().sort(function(a,b){return b.points-a.points;});
+  return sorted.findIndex(function(p){return p.email===player.email;})+1;
+}
+
+function getAvatarHtml(s,size,imgCls,iCls){
+  var md=members.find(function(m){return m.email===s.email;}),photo=md&&md.photo?md.photo:'';
+  if(photo)return'<img src="'+photo+'" class="'+imgCls+'" style="width:'+size+'px;height:'+size+'px" onerror="this.style.display=\'none\';this.nextSibling.style.display=\'flex\'"/><div class="'+iCls+'" style="display:none;width:'+size+'px;height:'+size+'px">'+s.name.charAt(0).toUpperCase()+'</div>';
+  return'<div class="'+iCls+'" style="width:'+size+'px;height:'+size+'px">'+s.name.charAt(0).toUpperCase()+'</div>';
+}
+
+function renderLeaderboard(){
+  var locked=matches.filter(function(m){return m.locked;});
+  document.getElementById("lbMatchCount").textContent=locked.length+" match"+(locked.length!==1?"es":"")+" finalized";
+  var totals={};
+  members.forEach(function(m){totals[m.email]={name:m.name,email:m.email,points:0,played:0,wins:0,p2:0,p3:0};});
+  locked.forEach(function(match){
+    var pts=(match.participants||[]).filter(function(p){return p.points!==null;});
+    var sorted=pts.slice().sort(function(a,b){return b.points-a.points;});
+    (match.participants||[]).forEach(function(p){
+      if(!totals[p.email])totals[p.email]={name:p.name,email:p.email,points:0,played:0,wins:0,p2:0,p3:0};
+      if(p.points!==null){totals[p.email].points+=p.points;totals[p.email].played++;var rank=sorted.findIndex(function(x){return x.email===p.email;})+1;if(rank===1)totals[p.email].wins++;else if(rank===2)totals[p.email].p2++;else if(rank===3)totals[p.email].p3++;}
+    });
+  });
+  var sorted=Object.values(totals).sort(function(a,b){return b.points-a.points;});
+  var podiumEl=document.getElementById("lbPodium"),listEl=document.getElementById("leaderboardList");
+  if(!sorted.length||sorted.every(function(s){return s.played===0;})){
+    podiumEl.innerHTML='';listEl.innerHTML='<div class="empty-state"><div class="icon">📊</div><div>No locked matches yet.</div></div>';return;
+  }
+
+  // Podium top 3
+  var top3=sorted.slice(0,3);
+  var crowns=['🥇','🥈','🥉'],pcls=['pc1','pc2','pc3'];
+  podiumEl.innerHTML='<div class="podium-wrap">'+top3.map(function(s,i){
+    var pts=s.points%1===0?s.points:s.points.toFixed(1);
+    var av=getAvatarHtml(s,54,'pc-av','pc-av-i');
+    return'<div class="pc '+pcls[i]+'" style="animation:slideUp .5s '+(i*.1)+'s ease both;opacity:0;animation-fill-mode:both">'
+      +'<span class="pc-crown">'+crowns[i]+'</span>'
+      +'<div style="display:flex;justify-content:center">'+av+'</div>'
+      +'<div class="pc-name">'+s.name+'</div>'
+      +'<div class="pc-pts">'+pts+'</div><div class="pc-pts-lbl">pts</div>'
+      +'<div class="pc-medals">'
+      +'<span class="pc-medal" style="background:rgba(255,215,0,.12);color:#FFD700;border:1px solid rgba(255,215,0,.25)">🥇'+s.wins+'</span>'
+      +'<span class="pc-medal" style="background:rgba(192,192,192,.1);color:#C0C0C0;border:1px solid rgba(192,192,192,.2)">🥈'+s.p2+'</span>'
+      +'<span class="pc-medal" style="background:rgba(205,127,50,.1);color:#CD7F32;border:1px solid rgba(205,127,50,.2)">🥉'+s.p3+'</span>'
+      +'</div><div class="pc-bar"></div></div>';
+  }).join('')+'</div>';
+
+  // Rest rows 4th+
+  var rest=sorted.slice(3);
+  if(!rest.length){listEl.innerHTML='';return;}
+  listEl.innerHTML=rest.map(function(s,i){
+    var pts=s.points%1===0?s.points:s.points.toFixed(1);
+    var av=getAvatarHtml(s,38,'lb-av-img','lb-av-i');
+    return'<div class="lb-row" style="animation-delay:'+(i*.06)+'s">'
+      +'<div class="lb-num">'+(i+4)+'</div>'+av
+      +'<div class="lb-info"><div class="lb-name">'+s.name+'</div><div class="lb-email">'+s.email+'</div>'
+      +'<div class="lb-badges">'
+      +'<span class="lb-badge" style="background:rgba(255,215,0,.1);color:#FFD700;border:1px solid rgba(255,215,0,.2)">🥇 '+s.wins+'</span>'
+      +'<span class="lb-badge" style="background:rgba(192,192,192,.08);color:#C0C0C0;border:1px solid rgba(192,192,192,.15)">🥈 '+s.p2+'</span>'
+      +'<span class="lb-badge" style="background:rgba(205,127,50,.08);color:#CD7F32;border:1px solid rgba(205,127,50,.15)">🥉 '+s.p3+'</span>'
+      +'<span class="lb-badge" style="background:rgba(255,255,255,.04);color:var(--muted2);border:1px solid var(--border)">'+s.played+' match'+(s.played!==1?'es':'')+'</span>'
+      +'</div></div>'
+      +'<div class="lb-pts-col"><div class="lb-pts">'+pts+'</div><div class="lb-pts-lbl">Total pts</div></div>'
+      +'</div>';
+  }).join('');
+}
+
+function renderWhitelist(){
+  document.getElementById("whitelistItems").innerHTML=whitelist.map(function(email){
+    return'<div class="wl-item"><span>'+email+(email===SUPER_ADMIN_EMAIL?' <span style="color:var(--gold);font-size:11px">(super admin)</span>':'')+'</span>'+(email!==SUPER_ADMIN_EMAIL?'<button class="rm-btn" onclick="removeFromWhitelist(\''+email+'\')">✕</button>':'')+'</div>';
+  }).join("");
+}
+
+function addToWhitelist(){
+  var email=document.getElementById("newEmailInput").value.trim().toLowerCase();
+  if(!email.includes("@")){showToast("Enter a valid email","error");return;}
+  if(whitelist.includes(email)){showToast("Already whitelisted","error");return;}
+  whitelist.push(email);
+  db.collection("config").doc("whitelist").set({emails:whitelist}).then(function(){document.getElementById("newEmailInput").value="";renderWhitelist();showToast("✅ Added to whitelist","success");});
+}
+
+function removeFromWhitelist(email){
+  if(!confirm("Remove "+email+" from whitelist?"))return;
+  whitelist=whitelist.filter(function(e){return e!==email;});
+  db.collection("config").doc("whitelist").set({emails:whitelist}).then(function(){renderWhitelist();showToast("Removed from whitelist","success");});
+}
+
+function switchTab(tab){
+  document.querySelectorAll(".tab-btn").forEach(function(b){b.classList.remove("active");});
+  document.querySelectorAll(".tab-content").forEach(function(c){c.classList.remove("active");});
+  document.querySelector('[onclick="switchTab(\''+tab+'\')"]').classList.add("active");
+  document.getElementById("tab-"+tab).classList.add("active");
+}
+
+function openProfileModal(){
+  var profileName=(currentMemberProfile&&currentMemberProfile.name)||currentUser.displayName||"";
+  var profilePhoto=(currentMemberProfile&&currentMemberProfile.photo)||currentUser.photoURL||"";
+  document.getElementById("profileName").value=profileName;
+  document.getElementById("profilePhotoUrl").value=profilePhoto;
+  previewModalPhoto(profilePhoto);
+  document.getElementById("profileModal").classList.add("open");
+}
+function closeProfileModal(){document.getElementById("profileModal").classList.remove("open");}
+function previewModalPhoto(url){
+  var img=document.getElementById("modalAvatar"),ph=document.getElementById("modalAvatarPlaceholder");
+  if(url&&url.trim()){img.src=url.trim();img.style.display="block";ph.style.display="none";img.onerror=function(){img.style.display="none";ph.style.display="flex";};}
+  else{img.style.display="none";ph.style.display="flex";}
+}
+function saveProfile(){
+  var newName=document.getElementById("profileName").value.trim(),newPhoto=document.getElementById("profilePhotoUrl").value.trim();
+  if(!newName){showToast("Name cannot be empty","error");return;}
+  var ep=newPhoto||"";
+  db.collection("members").doc(currentUser.email).update({name:newName,photo:ep}).then(function(){
+    currentMemberProfile={name:newName,email:currentUser.email,photo:ep};
+    document.getElementById("userName").textContent=newName.split(" ")[0];
+    var av=document.getElementById("userAvatar"),init=document.getElementById("userInit");
+    if(ep){av.src=ep;av.style.display="block";init.style.display="none";}
+    else{init.textContent=newName.charAt(0).toUpperCase();init.style.display="flex";av.style.display="none";}
+    members=members.map(function(m){return m.email===currentUser.email?Object.assign({},m,{name:newName,photo:ep}):m;});
+    closeProfileModal();showToast("✅ Profile updated!","success");
+  }).catch(function(e){showToast("Error: "+e.message,"error");});
+}
+document.getElementById("profileModal").addEventListener("click",function(e){if(e.target===this)closeProfileModal();});
+
+function showToast(msg,type){
+  var el=document.getElementById("toast");
+  el.textContent=msg;el.className="show "+(type||"success");
+  setTimeout(function(){el.className="";},3000);
+}
+</script>
+</body>
+</html>
